@@ -1,0 +1,49 @@
+{
+  "name": "@tezra-io/fermix-meetbot",
+  "version": "0.1.0",
+  "description": "Google Meet notetaker sidecar for the Fermix daemon: joins a meeting as a signed-in bot account and streams audio, roster, and active speaker over the packet-4 wire.",
+  "license": "MIT",
+  "type": "module",
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tezra-io/fermix-meetbot.git"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "dist/src/main.js",
+  "bin": {
+    "fermix-meetbot": "dist/src/main.js"
+  },
+  "files": [
+    "dist/src",
+    "protocol",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true});require('node:fs').rmSync('build',{recursive:true,force:true})\"",
+    "build": "tsc -p tsconfig.json",
+    "pretest": "npm run build",
+    "test": "node --test \"dist/test/**/*.test.js\"",
+    "lint": "eslint . && prettier --check .",
+    "fmt": "prettier --write .",
+    "package": "node scripts/build-binary.mjs",
+    "smoke": "node scripts/smoke-binary.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.62.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.17.0",
+    "postject": "^1.0.0-alpha.6",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.2"
+  }
+}

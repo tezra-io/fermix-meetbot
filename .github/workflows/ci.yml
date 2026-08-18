@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # No Chromium in CI. The hermetic suite never opens a browser, and a 150 MB
+  # download per job would buy nothing that the Meet DOM code could be tested
+  # against anyway.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+jobs:
+  gates:
+    name: lint, build, test (node ${{ matrix.node }} on ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ['22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: lint
+        run: npm run lint
+
+      - name: build
+        run: npm run build
+
+      - name: test
+        run: npm test
+
+  binary:
+    name: package + smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Proves the release path works on every push, not only on a tag: the
+      # bundle loads, the wire is spoken, and the browser path resolves from
+      # the inlined browsers.json. A packaging regression that only surfaces at
+      # release time is the failure this job exists to prevent.
+      - name: package
+        run: npm run package
+
+      - name: smoke
+        run: |
+          BINARY="$(ls build/fermix-meetbot-* | head -n 1)"
+          echo "smoking $BINARY"
+          npm run smoke -- "$BINARY"

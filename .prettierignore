@@ -1,0 +1,9 @@
+# The daemon's vendored export. Not ours to reformat — reformatting it would
+# change the golden bytes the conformance tests assert against.
+protocol/
+
+dist/
+build/
+node_modules/
+.playwright/
+package-lock.json
