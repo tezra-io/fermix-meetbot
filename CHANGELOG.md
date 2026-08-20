@@ -8,7 +8,22 @@ The wire `protocol_version` versions independently of this file. It is defined
 by fermix, exported to `protocol/`, and moves only with a paired release of
 both repositories.
 
-## [Unreleased] — 0.1.0
+## [0.2.0]
+
+Wire protocol version 1 (unchanged — sign-in is a subcommand, not a wire message).
+
+### Added
+
+- **`fermix-meetbot signin --profile-dir <dir>`** (`src/signin.ts`): the one-time
+  interactive Google sign-in. Opens a headed Chromium on the persistent profile
+  so the operator signs the bot's account in by hand — nothing types a password,
+  and success is read from the Google session cookie landing in the profile.
+  Status is NDJSON on stdout (`signin_state` / `signin_result`) and the exit code
+  is the verdict: `0` signed in, `2` cancelled (window closed first), `3` timed
+  out, `1` error. The daemon spawns this through the disclaim shim and drives it
+  from the setup page; the join path is unchanged.
+
+## [0.1.0]
 
 First release. Wire protocol version 1.
 

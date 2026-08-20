@@ -6,4 +6,4 @@
  * version that resolves differently in the binary than in the checkout is a
  * version nobody can trust. `version.test.ts` pins it to `package.json`.
  */
-export const SIDECAR_VERSION = '0.1.0';
+export const SIDECAR_VERSION = '0.2.0';

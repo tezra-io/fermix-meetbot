@@ -13,6 +13,7 @@ import process from 'node:process';
 import { FrameReader, FrameWriter } from './transport.js';
 import { Session } from './session.js';
 import { MeetDriver } from './meet/driver.js';
+import { runSignin } from './signin.js';
 import { SIDECAR_VERSION } from './version.js';
 
 /** How often the idle watchdog looks at the clock. */
@@ -22,6 +23,20 @@ const TICK_MS = 5_000;
 const EXIT_DEADLINE_MS = 1_500;
 
 export function run(): void {
+  // `signin` is a one-off interactive subcommand, not the meeting wire: it opens
+  // a headed browser for the operator and speaks NDJSON status on stdout. It
+  // never touches the FrameReader/Writer below.
+  if (process.argv[2] === 'signin') {
+    runSignin(process.argv.slice(3)).catch((cause) => {
+      process.stderr.write(
+        `fermix-meetbot signin: ${cause instanceof Error ? cause.message : String(cause)}\n`,
+      );
+      process.stdout.write(`${JSON.stringify({ event: 'signin_result', status: 'error' })}\n`);
+      process.exit(1);
+    });
+    return;
+  }
+
   const writer = new FrameWriter(process.stdout);
   const reader = new FrameReader();
   const driver = new MeetDriver();
