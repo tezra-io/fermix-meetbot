@@ -13,6 +13,9 @@ import process from 'node:process';
 import { FrameReader, FrameWriter } from './transport.js';
 import { Session } from './session.js';
 import { MeetDriver } from './meet/driver.js';
+import { registry as playwrightRegistry } from 'playwright-core/lib/coreBundle';
+
+import { runInstallBrowser } from './install-browser.js';
 import { runSignin } from './signin.js';
 import { SIDECAR_VERSION } from './version.js';
 
@@ -23,6 +26,17 @@ const TICK_MS = 5_000;
 const EXIT_DEADLINE_MS = 1_500;
 
 export function run(): void {
+  // Playwright's browser install forks THIS binary (`process.execPath`) to run
+  // its out-of-process downloader. Inside a SEA that fork re-enters here instead
+  // of Playwright's download entry, so route it there: a fork always has a Node
+  // IPC channel, which the daemon's Port-spawned sidecar and the signin/
+  // install-browser subcommands never have. Without this the download child
+  // would start a meeting session and the install would fail.
+  if (process.channel) {
+    playwrightRegistry.runOopDownloadBrowserMain();
+    return;
+  }
+
   // `signin` is a one-off interactive subcommand, not the meeting wire: it opens
   // a headed browser for the operator and speaks NDJSON status on stdout. It
   // never touches the FrameReader/Writer below.
@@ -32,6 +46,20 @@ export function run(): void {
         `fermix-meetbot signin: ${cause instanceof Error ? cause.message : String(cause)}\n`,
       );
       process.stdout.write(`${JSON.stringify({ event: 'signin_result', status: 'error' })}\n`);
+      process.exit(1);
+    });
+    return;
+  }
+
+  // `install-browser` installs this binary's own matching Chromium — the daemon
+  // runs it on enable so the operator never touches npx. Also a one-off
+  // subprocess with NDJSON status, not the meeting wire.
+  if (process.argv[2] === 'install-browser') {
+    runInstallBrowser().catch((cause) => {
+      process.stderr.write(
+        `fermix-meetbot install-browser: ${cause instanceof Error ? cause.message : String(cause)}\n`,
+      );
+      process.stdout.write(`${JSON.stringify({ event: 'browser_result', status: 'error' })}\n`);
       process.exit(1);
     });
     return;

@@ -8,9 +8,30 @@ The wire `protocol_version` versions independently of this file. It is defined
 by fermix, exported to `protocol/`, and moves only with a paired release of
 both repositories.
 
-## [0.2.0]
+## [0.3.0]
 
-Wire protocol version 1 (unchanged — sign-in is a subcommand, not a wire message).
+Wire protocol version 1 (unchanged — this is a subcommand, not a wire message).
+
+### Added
+
+- **`fermix-meetbot install-browser`** (`src/install-browser.ts`): installs this
+  binary's own version-matched Chromium so the daemon can set the notetaker up
+  with no `npx` and no operator commands. It drives Playwright's own `install`
+  command in-process (version-matched because the SEA inlines this Playwright's
+  `browsers.json`), is idempotent (`already: true` + exit 0 when the right
+  Chromium is already present), and speaks NDJSON on stdout
+  (`browser_state: checking | downloading | installed`, terminal
+  `browser_result: ok | error`) with the CLI's progress routed to stderr. Exit
+  code is the verdict (0 ok, 1 error).
+
+### Fixed
+
+- **SEA fork routing.** Playwright's out-of-process browser downloader `fork`s
+  `process.execPath`, which inside a single-executable build re-enters this
+  binary rather than Playwright's download entry. `main.ts` now detects that
+  fork (a Node IPC channel the daemon's Port-spawned sidecar never has) and runs
+  `registry.runOopDownloadBrowserMain()` — without which `install-browser`
+  failed and leaked a meeting `hello` into its own output.
 
 ### Added
 

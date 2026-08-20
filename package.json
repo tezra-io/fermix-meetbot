@@ -1,6 +1,6 @@
 {
   "name": "@tezra-io/fermix-meetbot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Google Meet notetaker sidecar for the Fermix daemon: joins a meeting as a signed-in bot account and streams audio, roster, and active speaker over the packet-4 wire.",
   "license": "MIT",
   "type": "module",
