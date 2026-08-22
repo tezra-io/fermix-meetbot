@@ -8,6 +8,39 @@ The wire `protocol_version` versions independently of this file. It is defined
 by fermix, exported to `protocol/`, and moves only with a paired release of
 both repositories.
 
+## [0.3.1]
+
+Wire protocol version 1 (unchanged).
+
+### Fixed
+
+- **Sign-in verifies the session actually holds before reporting success.** The
+  old check declared "signed in" the instant the `__Secure-1PSID` cookie
+  appeared in the live browser, then closed the window. That cookie can be
+  session-scoped (in-memory), so it never reached the on-disk profile and the
+  join reopened a signed-out browser — the sign-in reported success while the
+  bot showed up signed out, and every meeting join bounced to Google sign-in and
+  failed silently as `login_required`. `signin.ts` now requires the cookie to be
+  **persistent** and navigates to the auth-gated Meet home (`/home`) to confirm
+  the session stays on `meet.google.com` rather than bouncing to sign-in — a
+  positive host check, because a signed-out profile lands on the _marketing_
+  site (not `accounts.google.com`) and a "not accounts" check would pass it. The
+  verdict (`sessionIsDurable`) is a pure function under test. The "already signed in" re-run path verifies the same way, so a stale
+  profile re-prompts instead of falsely passing.
+
+- **The chat announcement waits for the toolbar to render.** Right after
+  admission the in-meeting toolbar is still settling, and a 2 s click-probe on
+  the chat control raced it — reporting "could not post the announcement" while
+  the (correctly-selected) button was moments from appearing. `postAnnouncement`
+  now waits for a chat toggle to become visible before clicking.
+
+### Changed
+
+- **`SIGNIN_MARKERS` recognizes Google's account chooser** ("Choose an account"
+  / "Use another account"). A signed-out profile lands there rather than on the
+  pre-join page; without these the join matched no marker and gave up silently as
+  `login_required` instead of the honest `signin_required`.
+
 ## [0.3.0]
 
 Wire protocol version 1 (unchanged — this is a subcommand, not a wire message).

@@ -47,6 +47,14 @@ export const DEFAULT_TIMINGS: JoinTimings = {
   probeMs: 2_000,
 };
 
+/**
+ * How long the chat control has to appear before the announcement gives up.
+ * The in-meeting toolbar is still settling right after admission, so a 2 s
+ * click-probe raced it and reported the chat unreachable while the button was
+ * moments from rendering. The selector was right; the wait was too short.
+ */
+const CHAT_READY_MS = 8_000;
+
 /** Clicks the first candidate that is present, and reports whether any was. */
 export async function clickFirst(
   page: Page,
@@ -198,7 +206,7 @@ export async function postAnnouncement(
   message: string,
   probeMs: number,
 ): Promise<boolean> {
-  if (!(await clickFirst(page, CHAT_TOGGLES, probeMs))) {
+  if (!(await openChat(page, probeMs))) {
     return false;
   }
   for (const selector of CHAT_INPUT) {
@@ -215,6 +223,23 @@ export async function postAnnouncement(
     }
   }
   return false;
+}
+
+/**
+ * Opens the chat panel, waiting for its toggle to render first. A `waitFor`
+ * rather than a bare click-probe, so a toolbar still settling after admission
+ * does not read as "no chat".
+ */
+async function openChat(page: Page, probeMs: number): Promise<boolean> {
+  try {
+    await page
+      .locator(CHAT_TOGGLES.join(', '))
+      .first()
+      .waitFor({ state: 'visible', timeout: CHAT_READY_MS });
+  } catch {
+    return false;
+  }
+  return clickFirst(page, CHAT_TOGGLES, probeMs);
 }
 
 /** Clicks "Leave call". Best effort — the caller closes the browser regardless. */

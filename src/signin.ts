@@ -4,8 +4,14 @@
  * Opens a HEADED Chromium on the persistent profile so the operator signs the
  * bot's Google account in by hand. Google actively challenges automated
  * sign-ins, so a real window the human drives is the only honest path — nothing
- * here types a password. Success is read from the Google session cookie landing
- * in the profile; the profile persists on context close, which is the point.
+ * here types a password.
+ *
+ * Success is NOT "a session cookie appeared". A cookie can be in-memory
+ * (session-scoped) and vanish the moment the profile is reopened for a join, so
+ * the sidecar once reported "signed in" while the bot showed up signed out.
+ * Success is: the session cookie is present AND persistent, AND a navigation to
+ * Meet does not bounce to the account chooser — the profile actually carries a
+ * working session onto disk, which is the point.
  *
  * This is NOT the packet-4 meeting wire — it is a plain subprocess. Status is
  * NDJSON on stdout (the daemon reads it for progress) and the exit code is the
@@ -15,17 +21,26 @@
 import process from 'node:process';
 import { chromium, type BrowserContext } from 'playwright';
 
-/** How often the cookie check runs while the human works. */
+/** How often the verification runs while the human works. */
 const POLL_MS = 1_500;
 /** How long the human has before the attempt times out. */
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
 /** Where the window opens — Google sign-in, continuing to Meet on success. */
 const SIGNIN_URL = 'https://accounts.google.com/ServiceLogin?continue=https://meet.google.com/';
+/** Where verification navigates. `/home` is auth-gated: a live session stays on
+ *  it, a dead one is bounced to `accounts.google.com`. The bare landing page is
+ *  NOT auth-gated — a signed-out profile lands on the marketing site — which is
+ *  how a presence-only check would let a stale profile pass. */
+const MEET_HOME = 'https://meet.google.com/home';
+/** How long the verification navigation may take before we call it not-yet. */
+const VERIFY_MS = 15_000;
 /**
- * A signed-in Google session drops this cookie on `.google.com`. Its presence
- * is the whole signal — we never scrape the account page or read a password.
+ * The durable session cookie Google drops on `.google.com`. Presence alone is
+ * the false positive that shipped: it must be PERSISTENT (a session-scoped
+ * cookie is gone when the join reopens the profile), and even then only a Meet
+ * navigation that does not bounce to sign-in proves the session holds.
  */
-const SESSION_COOKIE = '__Secure-1PSID';
+export const SESSION_COOKIE = '__Secure-1PSID';
 
 export type SigninState = 'launching' | 'awaiting_signin' | 'signed_in';
 export type SigninResult = 'ok' | 'cancelled' | 'timeout' | 'error';
@@ -56,9 +71,53 @@ function emitResult(status: SigninResult, extra: Record<string, unknown> = {}): 
   process.stdout.write(`${JSON.stringify({ event: 'signin_result', status, ...extra })}\n`);
 }
 
-async function hasSession(context: BrowserContext): Promise<boolean> {
-  const cookies = await context.cookies();
-  return cookies.some((c) => c.name === SESSION_COOKIE && c.value.length > 0);
+/** The two facts a verification navigation gathers, split out so the verdict is
+ *  a pure function the tests can pin without a browser. */
+export interface SessionProbe {
+  readonly cookies: readonly { name: string; value: string; expires: number }[];
+  /** The final URL after navigating the context to {@link MEET_HOME}. */
+  readonly meetUrl: string;
+}
+
+/**
+ * A durable, Meet-usable session: the session cookie is present AND persistent
+ * (`expires <= 0` is a session cookie that won't survive the profile close),
+ * AND the authed home kept the context on meet.google.com. All three, or it is
+ * not signed in — the presence check alone is what shipped the false positive.
+ */
+export function sessionIsDurable({ cookies, meetUrl }: SessionProbe): boolean {
+  const sid = cookies.find((c) => c.name === SESSION_COOKIE && c.value.length > 0);
+  if (!sid || sid.expires <= 0) {
+    return false;
+  }
+  // The authed home keeps a live session on meet.google.com and bounces a dead
+  // one away — to the account chooser, or the marketing site. A positive host
+  // check is the honest signal; "not accounts.google.com" would pass the
+  // marketing redirect a signed-out profile lands on.
+  return meetUrl.startsWith('https://meet.google.com');
+}
+
+/**
+ * Proves the profile carries a working session: gathers cookies, and only once
+ * the persistent cookie is actually present pays for a Meet navigation to see
+ * whether it holds. Any failure is a not-yet, never a throw — the poll retries.
+ */
+async function verifySession(context: BrowserContext): Promise<boolean> {
+  const durable = (await context.cookies()).some(
+    (c) => c.name === SESSION_COOKIE && c.value.length > 0 && c.expires > 0,
+  );
+  if (!durable) {
+    return false;
+  }
+  const probe = await context.newPage();
+  try {
+    await probe.goto(MEET_HOME, { waitUntil: 'domcontentloaded', timeout: VERIFY_MS });
+    return sessionIsDurable({ cookies: await context.cookies(), meetUrl: probe.url() });
+  } catch {
+    return false;
+  } finally {
+    await probe.close().catch(() => {});
+  }
 }
 
 /**
@@ -120,8 +179,9 @@ export async function runSignin(
     void finish('cancelled');
   });
 
-  // Already signed in (a re-run) — report and finish, idempotent.
-  if (await hasSession(context)) {
+  // Already signed in (a re-run) — report and finish, idempotent. Verification,
+  // not cookie presence, so a stale profile correctly re-prompts.
+  if (await verifySession(context)) {
     await finish('ok', { already: true });
     return;
   }
@@ -131,9 +191,10 @@ export async function runSignin(
   emitState('awaiting_signin');
 
   const deadline = Date.now() + timeoutMs;
+  let verifying = false;
   const tick = setInterval(() => {
     void (async () => {
-      if (done) {
+      if (done || verifying) {
         return;
       }
       if (Date.now() > deadline) {
@@ -141,10 +202,15 @@ export async function runSignin(
         await finish('timeout');
         return;
       }
-      if (await hasSession(context).catch(() => false)) {
-        clearInterval(tick);
-        emitState('signed_in');
-        await finish('ok');
+      verifying = true;
+      try {
+        if (await verifySession(context)) {
+          clearInterval(tick);
+          emitState('signed_in');
+          await finish('ok');
+        }
+      } finally {
+        verifying = false;
       }
     })();
   }, POLL_MS);

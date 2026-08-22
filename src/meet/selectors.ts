@@ -66,6 +66,11 @@ export const SIGNIN_MARKERS = [
   'text=Sign in to join this video call',
   'input[type="email"][name="identifier"]',
   'text=You must sign in to join this call',
+  // A signed-out profile lands on Google's account chooser, not the pre-join
+  // page; without these the join matched no marker and gave up silently as
+  // login_required instead of the honest signin_required.
+  'text=Choose an account',
+  'text=Use another account',
 ] as const;
 
 /** Meet refused the account itself (policy, org restriction, bot detection). */
