@@ -236,12 +236,14 @@ async function refusal(page: Page, progress: JoinProgress): Promise<JoinStatus> 
 }
 
 /**
- * Maps what the pre-join page shows in place of a join button onto the
- * protocol's statuses. Meet's "You can't join this video call" heading tops
- * every refusal, so the policy subtext (invite-only, restricted) outranks it:
- * that page is the account being kept out, not a host saying no. Reporting any
- * of these as `login_required` sent an operator to re-run sign-in for a meeting
- * that simply would not have the bot.
+ * Maps what the PRE-JOIN page shows in place of a join button onto the
+ * protocol's statuses. Nothing here can be a host's decision: no request has
+ * been made yet, so Meet's "You can't join this video call" means the meeting
+ * has not started, does not exist, or does not admit this account — which is
+ * `bot_blocked` ("kept out"), never `denied` ("the host said no"). Reporting
+ * any of it as `login_required` sent an operator to re-run sign-in for a
+ * meeting that simply would not have the bot. A host's actual decline is
+ * classified in `awaitAdmission`, after the knock.
  */
 export function classifyRefusal(flags: {
   denied: boolean;
@@ -251,11 +253,8 @@ export function classifyRefusal(flags: {
   if (flags.signin) {
     return 'signin_required';
   }
-  if (flags.blocked) {
+  if (flags.blocked || flags.denied) {
     return 'bot_blocked';
-  }
-  if (flags.denied) {
-    return 'denied';
   }
   return 'login_required';
 }

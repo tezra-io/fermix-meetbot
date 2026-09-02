@@ -8,6 +8,30 @@ The wire `protocol_version` versions independently of this file. It is defined
 by fermix, exported to `protocol/`, and moves only with a paired release of
 both repositories.
 
+## [0.3.3]
+
+Wire protocol version 1 (unchanged).
+
+### Fixed
+
+- **A pre-join refusal is no longer reported as a host's denial.** Meet's
+  reassurance blurb ("No one can join a meeting unless invited or admitted by
+  the host") sits on _every_ refusal page, so listing it as a bot-blocked
+  marker let it outrank the real decline text after a knock: a host who
+  declined would have been reported as "Google kept the account out". It is
+  gone, and `classifyRefusal` — which only ever sees the pre-join page, before
+  any request exists — now maps Meet's refusal heading to `bot_blocked` (the
+  meeting has not started, does not exist, or will not have this account)
+  rather than to `denied`. A genuine decline is still classified after the
+  knock, where a host has actually answered.
+
+### Changed
+
+- **The release matrix drops `macos-x86_64`.** GitHub has retired its Intel
+  macOS runners, so that job queues indefinitely and `publish` (which needs
+  every build) never runs — v0.3.2 built three good artifacts and published
+  none because of it.
+
 ## [0.3.2]
 
 Wire protocol version 1 (unchanged).

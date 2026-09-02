@@ -27,10 +27,13 @@ jobs:
           # host that built it, so each target gets its own runner. The target
           # strings match FermixCore.Meetings.SidecarInstaller.target/0 exactly;
           # a rename here makes the daemon download a 404.
+          #
+          # There is no macos-x86_64 leg: GitHub has retired its Intel macOS
+          # runners, so that job queues forever and `publish` (needs: build)
+          # never runs — which is exactly how v0.3.2 built four artifacts and
+          # released none. Restore the leg only with a runner that exists.
           - target: macos-aarch64
             runner: macos-14
-          - target: macos-x86_64
-            runner: macos-13
           - target: linux-x86_64
             runner: ubuntu-22.04
           - target: linux-aarch64

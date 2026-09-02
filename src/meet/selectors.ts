@@ -95,8 +95,6 @@ export const BOT_BLOCKED_MARKERS = [
   "text=You can't create a meeting yourself",
   'text=Your account is not allowed to join',
   'text=This meeting is restricted',
-  // The invite-only wall Meet raises before the join click (observed live).
-  'text=No one can join a meeting unless invited or admitted by the host',
 ] as const;
 
 /** Meet's post-call screen reads "You left the meeting" with a Rejoin control. */

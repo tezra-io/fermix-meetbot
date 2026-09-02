@@ -83,17 +83,18 @@ describe('selectors', () => {
 });
 
 describe('classifyRefusal — the pre-join page without a join button', () => {
-  it("reads Meet's own refusal as a denial, not a missing login", () => {
-    // "You can't join this video call" once reported login_required and sent
-    // the operator to re-run sign-in for a meeting that would not have the bot.
-    assert.equal(classifyRefusal({ denied: true, signin: false, blocked: false }), 'denied');
+  it('never calls a pre-join refusal a host denial — nobody has been asked yet', () => {
+    // "You can't join this video call" before the knock means the meeting has
+    // not started, does not exist, or will not have this account. It once
+    // reported login_required (re-run sign-in, for a meeting that would never
+    // admit the bot); reporting it as `denied` would blame a host who has not
+    // seen the request. A real decline is classified after the knock.
+    assert.equal(classifyRefusal({ denied: true, signin: false, blocked: false }), 'bot_blocked');
+    assert.equal(classifyRefusal({ denied: true, signin: false, blocked: true }), 'bot_blocked');
+    assert.equal(classifyRefusal({ denied: false, signin: false, blocked: true }), 'bot_blocked');
   });
 
-  it('lets the policy subtext outrank the heading every refusal shares', () => {
-    // The invite-only wall shows the heading AND "no one can join unless
-    // invited or admitted": that is the account being kept out, not a host
-    // saying no, and the daemon's sentence names a different fix for each.
-    assert.equal(classifyRefusal({ denied: true, signin: false, blocked: true }), 'bot_blocked');
+  it('ranks the account wall first: a signed-out profile is a sign-in problem', () => {
     assert.equal(
       classifyRefusal({ denied: false, signin: true, blocked: false }),
       'signin_required',
