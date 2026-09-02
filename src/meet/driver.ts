@@ -24,7 +24,13 @@ import {
   scrapeRoster,
 } from './roster.js';
 
-/** Headless Chromium needs fake devices or Meet refuses to arm the mic UI. */
+/**
+ * Headless Chromium needs a fake microphone or Meet refuses to arm the mic UI;
+ * the bot mutes it on the pre-join page and never speaks. The fake camera the
+ * same flag provides is never granted (see `permissions` below), so the bot has
+ * no video tile — Chromium's fake camera is an animated test pattern with a
+ * running counter, which is what every participant saw when it was on.
+ */
 const CHROMIUM_ARGS = [
   '--use-fake-ui-for-media-stream',
   '--use-fake-device-for-media-stream',
@@ -36,6 +42,13 @@ const CHROMIUM_ARGS = [
 ];
 
 const ROSTER_POLL_MS = 1_500;
+/**
+ * Consecutive polls with no in-meeting control before the call is declared
+ * over. A capture ended on one glitched poll cannot be resumed (relaunch is
+ * pre-admission only); the debounce costs ≤ one poll against a minute-scale
+ * alone grace.
+ */
+const GONE_POLLS_TO_END = 2;
 
 export interface MeetDriverOptions {
   headless?: boolean;
@@ -50,6 +63,9 @@ export class MeetDriver implements MeetingDriver {
   #poll: NodeJS.Timeout | null = null;
   #roster: Participant[] | null = null;
   #pipeline: AudioPipeline | null = null;
+  #gonePolls = 0;
+  #speakerResolved = false;
+  #speakerUnmatched = false;
 
   constructor(options: MeetDriverOptions = {}) {
     this.#headless = options.headless ?? true;
@@ -67,7 +83,7 @@ export class MeetDriver implements MeetingDriver {
       // has no WebRTC stack — the bot would join and hear silence forever.
       channel: 'chromium',
       args: CHROMIUM_ARGS,
-      permissions: ['microphone', 'camera'],
+      permissions: ['microphone'],
       viewport: { width: 1280, height: 800 },
     });
     this.#context = context;
@@ -76,21 +92,13 @@ export class MeetDriver implements MeetingDriver {
     return joinMeeting(this.#page, command, events, DEFAULT_TIMINGS);
   }
 
+  /**
+   * The audio tap and the roster are the product; the announcement is a
+   * courtesy. They come first, so a slow or failing chat never costs the
+   * opening seconds of the meeting.
+   */
   async capture(command: JoinCommand, events: DriverEvents): Promise<void> {
     const page = this.#requirePage();
-
-    if (command.announce) {
-      const posted = await postAnnouncement(
-        page,
-        command.announce_message,
-        DEFAULT_TIMINGS.probeMs,
-      );
-      if (posted) {
-        events.chatPosted();
-      } else {
-        events.log('warn', 'could not post the announcement to the meeting chat');
-      }
-    }
 
     const pipeline = new AudioPipeline();
     this.#pipeline = pipeline;
@@ -104,6 +112,22 @@ export class MeetDriver implements MeetingDriver {
     this.#poll = setInterval(() => {
       void this.#tick(events);
     }, this.#rosterPollMs);
+
+    if (command.announce) {
+      await this.#announce(page, command.announce_message, events);
+    }
+  }
+
+  async #announce(page: Page, message: string, events: DriverEvents): Promise<void> {
+    const result = await postAnnouncement(page, message);
+    if (result.posted) {
+      events.chatPosted();
+      return;
+    }
+    events.log(
+      'warn',
+      `could not post the announcement to the meeting chat (${result.step}); ${result.digest}`,
+    );
   }
 
   async leave(): Promise<void> {
@@ -155,10 +179,12 @@ export class MeetDriver implements MeetingDriver {
     if (await anyVisible(page, MEETING_CLOSED_MARKERS)) {
       return 'meeting_closed';
     }
-    if (!(await anyVisible(page, IN_MEETING_MARKERS))) {
-      return 'meeting_closed';
+    if (await anyVisible(page, IN_MEETING_MARKERS)) {
+      this.#gonePolls = 0;
+      return null;
     }
-    return null;
+    this.#gonePolls += 1;
+    return this.#gonePolls >= GONE_POLLS_TO_END ? 'meeting_closed' : null;
   }
 
   async #emitRoster(events: DriverEvents, force: boolean): Promise<void> {
@@ -177,8 +203,25 @@ export class MeetDriver implements MeetingDriver {
     }
 
     const speaker = resolveSpeaker(scrape.speakingId, participants);
+    this.#noteSpeakerResolution(events, scrape.speakingId, speaker);
     if (speaker !== null) {
       events.activeSpeaker(speaker);
+    }
+  }
+
+  /**
+   * One line per meeting each way, so the daemon log says whether speaker
+   * attribution ever had a signal to work with — "Unknown speaker" on every
+   * transcript line used to be indistinguishable from nobody having spoken.
+   */
+  #noteSpeakerResolution(events: DriverEvents, raw: string | null, speaker: string | null): void {
+    if (speaker !== null && !this.#speakerResolved) {
+      this.#speakerResolved = true;
+      events.log('info', 'speaking indicator resolved to a roster participant');
+    }
+    if (raw !== null && speaker === null && !this.#speakerUnmatched) {
+      this.#speakerUnmatched = true;
+      events.log('warn', 'speaking indicator matched, but its participant id is not on the roster');
     }
   }
 

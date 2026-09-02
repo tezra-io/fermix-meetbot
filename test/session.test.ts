@@ -9,7 +9,13 @@ import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { describe, it } from 'node:test';
 
-import { CONTROL_FRAME_TYPE, controlFrame, frame, samplesToMs } from '../src/protocol.js';
+import {
+  CONTROL_FRAME_TYPE,
+  controlFrame,
+  frame,
+  samplesToMs,
+  type JoinStatus,
+} from '../src/protocol.js';
 import { Harness, JOIN_COMMAND, ScriptedDriver, toneFrame } from './support/harness.js';
 import { audioFixture } from './support/fixtures.js';
 
@@ -199,6 +205,30 @@ describe('wedge scenario', () => {
       await harness.send({ type: 'ping' });
     }
     assert.deepEqual(harness.shape(), ['hello', 'join_result', 'pong', 'pong', 'pong']);
+    assert.deepEqual(harness.exits, []);
+  });
+
+  it('answers a ping while the join is still waiting in the lobby', async () => {
+    let admit: (status: JoinStatus) => void = () => undefined;
+    const driver = new ScriptedDriver({
+      join: () =>
+        new Promise<JoinStatus>((resolve) => {
+          admit = resolve;
+        }),
+      capture: () => undefined,
+    });
+    const harness = new Harness(driver);
+    harness.session.start();
+
+    // Parked in the lobby: the join step holds the queue until a host admits.
+    const joining = harness.send(JOIN_COMMAND);
+    await new Promise((resolve) => setImmediate(resolve));
+    harness.sendNow({ type: 'ping' });
+    assert.deepEqual(harness.shape(), ['hello', 'pong']);
+
+    admit('admitted');
+    await joining;
+    assert.deepEqual(harness.shape(), ['hello', 'pong', 'join_result']);
     assert.deepEqual(harness.exits, []);
   });
 

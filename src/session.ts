@@ -166,7 +166,22 @@ export class Session {
       return;
     }
 
+    // Liveness never waits behind meeting work. A join can sit in the lobby
+    // for minutes, and the daemon tears down a sidecar whose pong is 15 s late;
+    // answered from the queue, a slow admission killed the meeting it was for.
+    if (inbound.type === 'ping') {
+      this.#pong();
+      return;
+    }
+
     this.#enqueue(() => this.#dispatch(inbound));
+  }
+
+  #pong(): void {
+    if (this.#finished) {
+      return;
+    }
+    this.#sink.writeControl({ type: 'pong' });
   }
 
   /**
@@ -226,7 +241,7 @@ export class Session {
     }
     switch (inbound.type) {
       case 'ping':
-        this.#sink.writeControl({ type: 'pong' });
+        // Answered in `handleFrame`, ahead of the queue.
         return;
       case 'leave':
         await this.#handleLeave();

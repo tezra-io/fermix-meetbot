@@ -23,16 +23,20 @@ export const DISMISS_BUTTONS = [
   '[role="dialog"] button:has-text("Got it")',
   '[role="dialog"] button:has-text("Dismiss")',
   '[role="dialog"] button:has-text("Continue without microphone")',
+  // With no camera permission Meet asks "Do you want people to see you in the
+  // meeting?" and hides the join button until this is answered.
+  '[role="dialog"] button:has-text("Continue without camera")',
 ] as const;
 
+/**
+ * Meet renders the device controls as real `<button>`s (pre-join and
+ * in-call alike). A `div[role="button"]` form never matched, which is how the
+ * bot once joined with a live microphone. There is no camera toggle: the bot
+ * asks for no camera permission, so Meet has nothing to turn off.
+ */
 export const MUTE_TOGGLES = [
-  'div[role="button"][aria-label*="Turn off microphone"]',
-  'div[role="button"][data-is-muted="false"][aria-label*="microphone"]',
-] as const;
-
-export const CAMERA_TOGGLES = [
-  'div[role="button"][aria-label*="Turn off camera"]',
-  'div[role="button"][data-is-muted="false"][aria-label*="camera"]',
+  'button[aria-label*="Turn off microphone"]',
+  'button[data-is-muted="false"][aria-label*="microphone"]',
 ] as const;
 
 export const JOIN_BUTTONS = [
@@ -42,24 +46,37 @@ export const JOIN_BUTTONS = [
   'div[role="button"]:has-text("Join now")',
 ] as const;
 
-/** Present once we are inside the meeting. */
+/**
+ * Present once we are inside the meeting, and only then. `[data-meeting-code]`
+ * used to be listed here, but Meet carries it on the pre-join page as well, so
+ * it read the lobby as the call and swallowed the knocking state.
+ */
 export const IN_MEETING_MARKERS = [
   'button[aria-label="Leave call"]',
   'button[aria-label*="Leave call"]',
-  '[data-meeting-code]',
 ] as const;
 
 /** The waiting-room state: asked to join, nobody has answered yet. */
 export const KNOCKING_MARKERS = [
-  'text=Asking to be let in',
-  "text=You'll join the call when someone lets you in",
+  'text=/Asking to (join|be let in)/i',
+  // Regex so the copy's typographic apostrophe cannot defeat a literal match.
+  'text=/You.ll join the call when someone lets you in/i',
 ] as const;
 
+/**
+ * Someone said no. The heading "You can't join this video call" tops EVERY
+ * refusal Meet renders, so on the pre-join page it is read together with the
+ * subtexts below (`classifyRefusal`); after a knock only a decline or an expiry
+ * can produce it, and it stays the lowest-priority "denied" signal there.
+ */
 export const DENIED_MARKERS = [
-  "text=You can't join this video call",
   'text=Your request to join was denied',
-  'text=No one responded to your request to join',
+  'text=/denied your request to join/i',
+  "text=You can't join this video call",
 ] as const;
+
+/** Nobody answered the knock before Meet gave up on it. */
+export const KNOCK_EXPIRED_MARKERS = ['text=No one responded to your request to join'] as const;
 
 /** Meet wants a Google account before it will let anyone in. */
 export const SIGNIN_MARKERS = [
@@ -78,10 +95,13 @@ export const BOT_BLOCKED_MARKERS = [
   "text=You can't create a meeting yourself",
   'text=Your account is not allowed to join',
   'text=This meeting is restricted',
+  // The invite-only wall Meet raises before the join click (observed live).
+  'text=No one can join a meeting unless invited or admitted by the host',
 ] as const;
 
+/** Meet's post-call screen reads "You left the meeting" with a Rejoin control. */
 export const MEETING_CLOSED_MARKERS = [
-  "text=You've left the meeting",
+  'text=You left the meeting',
   'text=The call ended',
   'text=This meeting has ended',
 ] as const;
@@ -106,9 +126,15 @@ export const CHAT_INPUT = [
   'textarea[placeholder*="Send a message"]',
 ] as const;
 
-export const CHAT_SEND_BUTTONS = [
-  'button[aria-label="Send a message"]',
-  'button[aria-label*="Send message"]',
+/**
+ * Post-admission dialogs that can sit over the toolbar. Scoped to a dialog on
+ * purpose: an unscoped "Close" is the chat panel's own close control.
+ */
+export const IN_CALL_DIALOG_DISMISS = [
+  '[role="dialog"] button:has-text("Got it")',
+  '[role="dialog"] button:has-text("Dismiss")',
+  '[role="dialog"] button:has-text("OK")',
+  '[role="dialog"] button[aria-label="Close"]',
 ] as const;
 
 export const PEOPLE_TOGGLES = [
@@ -131,24 +157,33 @@ export const ROSTER_ID_ATTRIBUTES = [
   'data-requested-participant-id',
 ] as const;
 
-export const ROSTER_NAME_NODES = ['[data-self-name]', '.zWGUib', 'span[jsname]'] as const;
+/**
+ * The display name is the tile's visible `span.notranslate` (observed live).
+ * `span[jsname]` matched the icon glyph spans ("frame_person") and the old
+ * class never matched, so rows fell through to the tile's whole text.
+ */
+export const ROSTER_NAME_NODES = ['span.notranslate', '[data-self-name]'] as const;
 
-/** A speaking participant is flagged on their tile, not in the roster list. */
-export const SPEAKING_MARKERS = [
-  '[data-participant-id][data-is-speaking="true"]',
-  '[data-participant-id] [class*="speaking"]',
-] as const;
+/**
+ * A speaking participant is flagged on their tile, not in the roster list.
+ * Meet has no `data-is-speaking`; the tile's audio indicator
+ * (`div[jsname="QgSmzd"]`) carries the class `sxlEM` for exactly the span of a
+ * speech burst (observed live against a looped speech/silence recording), with
+ * the level classes cycling beneath it. `:has()` keeps the tile as the match,
+ * so its `data-participant-id` is the speaker.
+ */
+export const SPEAKING_MARKERS = ['[data-participant-id]:has(div[jsname="QgSmzd"].sxlEM)'] as const;
 
 /** Every group, keyed for the drift test that asserts none of them is empty. */
 export const SELECTOR_GROUPS = {
   NAME_INPUT,
   DISMISS_BUTTONS,
   MUTE_TOGGLES,
-  CAMERA_TOGGLES,
   JOIN_BUTTONS,
   IN_MEETING_MARKERS,
   KNOCKING_MARKERS,
   DENIED_MARKERS,
+  KNOCK_EXPIRED_MARKERS,
   SIGNIN_MARKERS,
   BOT_BLOCKED_MARKERS,
   MEETING_CLOSED_MARKERS,
@@ -156,7 +191,7 @@ export const SELECTOR_GROUPS = {
   LEAVE_BUTTONS,
   CHAT_TOGGLES,
   CHAT_INPUT,
-  CHAT_SEND_BUTTONS,
+  IN_CALL_DIALOG_DISMISS,
   PEOPLE_TOGGLES,
   ROSTER_ITEMS,
   ROSTER_ID_ATTRIBUTES,

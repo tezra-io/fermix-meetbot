@@ -11,6 +11,7 @@ import { describe, it } from 'node:test';
 
 import { AUDIO_SAMPLE_RATE_HZ, MAX_AUDIO_BYTES, ROSTER_MAX } from '../src/protocol.js';
 import { AudioPipeline, FRAME_BYTES } from '../src/meet/audio.js';
+import { DIGEST_MAX_CHARS, classifyRefusal, formatChatDigest } from '../src/meet/join.js';
 import { PcmChunker, Resampler } from '../src/meet/pcm.js';
 import {
   normalizeParticipants,
@@ -36,6 +37,36 @@ describe('selectors', () => {
     }
   });
 
+  it('never treats page data as proof of being in the call', () => {
+    // `[data-meeting-code]` is on the pre-join page too: listed here, it read
+    // the lobby as the call, started capture there, and hid the knocking state.
+    for (const selector of SELECTOR_GROUPS.IN_MEETING_MARKERS) {
+      assert.doesNotMatch(selector, /data-meeting-code/);
+    }
+  });
+
+  it('keeps every comma-joined control group in the CSS engine', () => {
+    // `firstVisible` joins a group with ", ", which only CSS supports; a
+    // `text=` entry would silently break the whole group.
+    for (const name of [
+      'NAME_INPUT',
+      'DISMISS_BUTTONS',
+      'MUTE_TOGGLES',
+      'JOIN_BUTTONS',
+      'LEAVE_BUTTONS',
+      'CHAT_TOGGLES',
+      'CHAT_INPUT',
+      'IN_CALL_DIALOG_DISMISS',
+    ] as const) {
+      for (const selector of SELECTOR_GROUPS[name]) {
+        assert.doesNotMatch(selector, /^(text|xpath|css)=/, `${name}: ${selector}`);
+      }
+    }
+    for (const selector of SELECTOR_GROUPS.IN_CALL_DIALOG_DISMISS) {
+      assert.ok(selector.startsWith('[role="dialog"] '), `unscoped dismissal: ${selector}`);
+    }
+  });
+
   it('covers every outcome the join_result enum can report from the DOM', () => {
     // A missing marker group is how a real join silently degrades to
     // knock_timeout, so the inventory is asserted rather than assumed.
@@ -48,6 +79,62 @@ describe('selectors', () => {
     ]) {
       assert.ok(name in SELECTOR_GROUPS, `${name} is gone from the selector inventory`);
     }
+  });
+});
+
+describe('classifyRefusal — the pre-join page without a join button', () => {
+  it("reads Meet's own refusal as a denial, not a missing login", () => {
+    // "You can't join this video call" once reported login_required and sent
+    // the operator to re-run sign-in for a meeting that would not have the bot.
+    assert.equal(classifyRefusal({ denied: true, signin: false, blocked: false }), 'denied');
+  });
+
+  it('lets the policy subtext outrank the heading every refusal shares', () => {
+    // The invite-only wall shows the heading AND "no one can join unless
+    // invited or admitted": that is the account being kept out, not a host
+    // saying no, and the daemon's sentence names a different fix for each.
+    assert.equal(classifyRefusal({ denied: true, signin: false, blocked: true }), 'bot_blocked');
+    assert.equal(
+      classifyRefusal({ denied: false, signin: true, blocked: false }),
+      'signin_required',
+    );
+    assert.equal(classifyRefusal({ denied: true, signin: true, blocked: true }), 'signin_required');
+  });
+
+  it('falls back to login_required only when the page shows nothing it knows', () => {
+    assert.equal(
+      classifyRefusal({ denied: false, signin: false, blocked: false }),
+      'login_required',
+    );
+  });
+});
+
+describe('formatChatDigest — what a failed announcement reports', () => {
+  const surface = {
+    toggle: 'pressed=true expanded=- disabled=false',
+    buttons: ['Leave call', 'Chat with everyone'],
+    dialogs: ['Your meeting is safe buttons=(Got it)'],
+    inputs: ['textarea aria=Send a message placeholder=Send a message visible=true disabled=true'],
+  };
+
+  it('keeps a fixed field order so two failures can be diffed', () => {
+    assert.equal(
+      formatChatDigest(surface, DIGEST_MAX_CHARS),
+      'toggle=pressed=true expanded=- disabled=false buttons=[Leave call | Chat with everyone] ' +
+        'dialogs=[Your meeting is safe buttons=(Got it)] ' +
+        'inputs=[textarea aria=Send a message placeholder=Send a message visible=true disabled=true]',
+    );
+  });
+
+  it('is bounded, so it can never breach the control-frame cap', () => {
+    const wide = {
+      ...surface,
+      buttons: Array.from({ length: 400 }, (_, i) => `button ${String(i)}`),
+    };
+    const digest = formatChatDigest(wide, DIGEST_MAX_CHARS);
+    assert.equal(digest.length, DIGEST_MAX_CHARS);
+    assert.ok(digest.endsWith('…'));
+    assert.ok(DIGEST_MAX_CHARS < MAX_AUDIO_BYTES);
   });
 });
 

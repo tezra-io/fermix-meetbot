@@ -111,6 +111,16 @@ export class Harness {
     await this.session.whenIdle();
   }
 
+  /**
+   * Delivers a control message WITHOUT waiting for the lifecycle queue — for
+   * frames that must be answered while a step (a lobby wait) is in flight.
+   */
+  sendNow(message: D2sControl): void {
+    for (const body of new FrameReader().push(controlFrame(message))) {
+      this.session.handleFrame(body);
+    }
+  }
+
   /** Delivers raw bytes, for the malformed-input cases. */
   async sendRaw(bytes: Buffer): Promise<void> {
     for (const body of new FrameReader().push(bytes)) {

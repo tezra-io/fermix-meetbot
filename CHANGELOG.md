@@ -8,6 +8,61 @@ The wire `protocol_version` versions independently of this file. It is defined
 by fermix, exported to `protocol/`, and moves only with a paired release of
 both repositories.
 
+## [0.3.2]
+
+Wire protocol version 1 (unchanged).
+
+### Fixed
+
+- **`ping` is answered ahead of the lifecycle queue.** A join can sit in the
+  lobby for minutes, and the daemon tears down a sidecar whose `pong` is 15 s
+  late; answered from the same queue the join holds, any admission slower than
+  about 45 s ended the meeting it was for.
+- **The bot no longer joins with a live camera and microphone.** Meet renders
+  the device controls as `<button>`s; the `div[role="button"]` selectors never
+  matched, so the pre-join mute clicks silently did nothing and every
+  participant saw Chromium's fake camera pattern with its running counter. The
+  camera permission is no longer requested at all (the "Do you want people to
+  see you in the meeting?" dialog is dismissed with _Continue without camera_),
+  and the microphone toggle selectors match the real controls.
+- **One bounded wait per control group.** `clickFirst` probed candidates one by
+  one with a 2 s click timeout each, so a pre-join page with nothing to dismiss
+  and no name field cost ~18 s before "Ask to join" was clicked (34 s measured
+  on a refused page). A group now waits once for any candidate, then picks by
+  the group's priority order.
+- **A pre-join dialog is a ready page.** With no camera permission Meet can
+  raise "Do you want people to see you in the meeting?" before it renders the
+  join button; the page-ready gate now accepts a dismissable dialog, and the
+  join button is then awaited against the refusal walls for the page budget
+  instead of a 2 s click probe.
+- **The lobby is recognised.** `[data-meeting-code]` is present on the pre-join
+  page too, so it read the lobby as the call and the `knocking` phase never
+  reached the daemon; the in-meeting marker is now the Leave-call control only,
+  the knocking notice gets a 5 s window, and "Asking to join" is a candidate.
+- **A refusal is reported as one.** "You can't join this video call" before the
+  join click was `login_required`; it is `denied` now, with the account wall and
+  the org block ranked ahead of the catch-all.
+- **Audio first, announcement second.** `capture` attached the audio tap only
+  after the chat announcement, so a slow or failing chat cost the opening
+  seconds of the meeting. The tap and the first roster snapshot now come first.
+- **The announcement retries and explains itself.** The chat control is a
+  toggle (a click on an open panel closes it) and can render before it is
+  clickable right after admission; `postAnnouncement` now takes an
+  already-open panel as-is, waits for the input after each bounded toggle click
+  (three attempts), and on failure logs which step failed with a bounded digest
+  of the page (visible controls, dialogs, inputs, live regions) so the daemon
+  log carries a diagnosis rather than "could not post".
+- **End of call.** Meet's post-call screen reads "You left the meeting"; the
+  closed marker said "You've left".
+- **Roster names.** `ROSTER_NAME_NODES` matched the icon glyph spans or nothing,
+  so a participant's name fell through to the tile's entire text
+  ("frame_personReframe…Sujeeth Shetty…devices"). The visible
+  `span.notranslate` is the name.
+- **Speaker attribution.** `SPEAKING_MARKERS` looked for a `data-is-speaking`
+  attribute Meet does not have, so every transcript line was "Unknown speaker".
+  The tile's audio indicator carries class `sxlEM` for the span of a speech
+  burst (observed live); the marker now keys on it.
+
 ## [0.3.1]
 
 Wire protocol version 1 (unchanged).
