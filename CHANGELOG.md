@@ -8,6 +8,26 @@ The wire `protocol_version` versions independently of this file. It is defined
 by fermix, exported to `protocol/`, and moves only with a paired release of
 both repositories.
 
+## [0.3.4]
+
+Wire protocol version 1 (unchanged).
+
+### Fixed
+
+- **The sign-in window no longer announces itself as automated, so Google
+  lets the account sign in.** Google Accounts refuses a browser that reports
+  itself as automated ("Couldn't sign you in. This browser or app may not be
+  secure"), which is exactly how Playwright starts Chromium by default:
+  `--enable-automation` sets `navigator.webdriver` and shows the "controlled
+  by automated test software" bar. The join has always launched with that
+  report suppressed; the sign-in window, the one place a human is asked to
+  type a password, launched with it on, and on a fresh Linux profile Google
+  blocked the sign-in outright. `signin` now launches the way the join does,
+  with `--disable-blink-features=AutomationControlled` and without
+  `--enable-automation`. Nothing else about the window changes: still headed,
+  still the pinned Chromium build, still the persistent profile the join
+  reopens, still a human typing the password.
+
 ## [0.3.3]
 
 Wire protocol version 1 (unchanged).

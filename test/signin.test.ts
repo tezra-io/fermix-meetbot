@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { EXIT_CODES, parseProfileDir, SESSION_COOKIE, sessionIsDurable } from '../src/signin.js';
+import {
+  EXIT_CODES,
+  parseProfileDir,
+  SESSION_COOKIE,
+  sessionIsDurable,
+  SIGNIN_LAUNCH,
+} from '../src/signin.js';
+import { CHROMIUM_ARGS } from '../src/meet/driver.js';
 
 const MEET = 'https://meet.google.com/home';
 const CHOOSER = 'https://accounts.google.com/v3/signin/accountchooser';
@@ -65,5 +72,25 @@ describe('sessionIsDurable — the sign-in verdict', () => {
       }),
       false,
     );
+  });
+});
+
+describe('the sign-in window is not announced as automated', () => {
+  // Google Accounts refuses to sign in a browser that reports itself as
+  // automated ("This browser or app may not be secure"). The join already
+  // launches without that report; the sign-in window is where the human is
+  // asked to sign in, so it must be at least as quiet.
+  it('drops the webdriver flag the join already drops', () => {
+    assert.ok(SIGNIN_LAUNCH.args.includes('--disable-blink-features=AutomationControlled'));
+    assert.ok(CHROMIUM_ARGS.includes('--disable-blink-features=AutomationControlled'));
+  });
+
+  it('does not let Playwright add --enable-automation, which shows the "controlled" bar', () => {
+    assert.ok(SIGNIN_LAUNCH.ignoreDefaultArgs.includes('--enable-automation'));
+  });
+
+  it('still opens a headed window on the persistent profile', () => {
+    assert.equal(SIGNIN_LAUNCH.headless, false);
+    assert.equal(SIGNIN_LAUNCH.channel, 'chromium');
   });
 });

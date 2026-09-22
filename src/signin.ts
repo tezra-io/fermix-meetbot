@@ -42,6 +42,29 @@ const VERIFY_MS = 15_000;
  */
 export const SESSION_COOKIE = '__Secure-1PSID';
 
+/**
+ * How the sign-in window is launched. Google Accounts refuses a browser that
+ * reports itself as automated ("Couldn't sign you in. This browser or app may
+ * not be secure"): Playwright starts Chromium with `--enable-automation`, which
+ * sets `navigator.webdriver` and shows the "controlled by automated test
+ * software" bar. The join has never launched that way; the sign-in window,
+ * where the human is asked to type a password, launched exactly that way, and
+ * Google blocked it. So: the same webdriver-hiding flag the join uses, and no
+ * `--enable-automation`. A headed window on the persistent profile, as before.
+ */
+export const SIGNIN_LAUNCH = {
+  headless: false,
+  // Full Chromium (not chrome-headless-shell) — same build the join uses.
+  channel: 'chromium',
+  args: [
+    '--disable-blink-features=AutomationControlled',
+    '--no-first-run',
+    '--no-default-browser-check',
+  ],
+  ignoreDefaultArgs: ['--enable-automation'],
+  viewport: { width: 1024, height: 760 },
+} as const;
+
 export type SigninState = 'launching' | 'awaiting_signin' | 'signed_in';
 export type SigninResult = 'ok' | 'cancelled' | 'timeout' | 'error';
 
@@ -145,11 +168,9 @@ export async function runSignin(
   let context: BrowserContext;
   try {
     context = await chromium.launchPersistentContext(profileDir, {
-      headless: false,
-      // Full Chromium (not chrome-headless-shell) — same build the join uses.
-      channel: 'chromium',
-      args: ['--no-first-run', '--no-default-browser-check'],
-      viewport: { width: 1024, height: 760 },
+      ...SIGNIN_LAUNCH,
+      args: [...SIGNIN_LAUNCH.args],
+      ignoreDefaultArgs: [...SIGNIN_LAUNCH.ignoreDefaultArgs],
     });
   } catch (cause) {
     process.stderr.write(

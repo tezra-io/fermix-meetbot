@@ -31,7 +31,7 @@ import {
  * no video tile — Chromium's fake camera is an animated test pattern with a
  * running counter, which is what every participant saw when it was on.
  */
-const CHROMIUM_ARGS = [
+export const CHROMIUM_ARGS = [
   '--use-fake-ui-for-media-stream',
   '--use-fake-device-for-media-stream',
   '--autoplay-policy=no-user-gesture-required',
