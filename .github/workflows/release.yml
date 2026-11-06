@@ -33,7 +33,7 @@ jobs:
           # never runs — which is exactly how v0.3.2 built four artifacts and
           # released none. Restore the leg only with a runner that exists.
           - target: macos-aarch64
-            runner: macos-14
+            runner: macos-15
           - target: linux-x86_64
             runner: ubuntu-22.04
           - target: linux-aarch64
